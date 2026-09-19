@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Today's List — Pantry List{% endblock %}
+
+{% block content %}
+<div class="dash-layout">
+  <div class="items-pane">
+    <div class="dash-header">
+      <h1>What's needed today?</h1>
+      <p>Build your grocery list in one tap.</p>
+    </div>
+
+    <div class="search-bar">
+      <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="search-input" placeholder="Search groceries…" aria-label="Search groceries">
+      <button type="button" class="search-clear" id="search-clear" aria-label="Clear search">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    {% if frequently_added %}
+    <div class="freq-block" id="freq-block">
+      <div class="freq-title">Frequently added</div>
+      <div class="freq-chips">
+        {% for item in frequently_added %}
+          <button type="button" class="freq-chip {{ 'selected' if item.id in draft_item_ids }}"
+                  data-item-id="{{ item.id }}" data-item-name="{{ item.name }}" data-item-unit="{{ item.default_unit }}"
+                  aria-pressed="{{ 'true' if item.id in draft_item_ids else 'false' }}">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            {{ item.name }}
+          </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div id="search-no-results" class="search-no-results">
+      <svg class="icon icon-lg" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <p>No items match your search.</p>
+    </div>
+
+    <div id="category-list">
+      {% for cat in categories %}
+      <div class="category-block" data-category-block="{{ cat.id }}">
+        <div class="category-title">
+          <span class="cat-icon">{{ cat.icon }}</span> {{ cat.name }}
+        </div>
+        <div class="item-grid" data-category-id="{{ cat.id }}">
+          {% for item in items_by_category[cat.id] %}
+            {% set is_selected = item.id in draft_item_ids %}
+            {% set qty = draft_quantities.get(item.id, '1') %}
+            <div class="item-chip {{ 'selected' if is_selected }}"
+                 role="button"
+                 tabindex="0"
+                 data-item-id="{{ item.id }}"
+                 data-item-name="{{ item.name }}"
+                 data-item-unit="{{ item.default_unit }}"
+                 data-search="{{ item.name|lower }}"
+                 data-qty="{{ qty }}"
+                 aria-pressed="{{ 'true' if is_selected else 'false' }}">
+              {% if item.user_id == current_user.id %}
+                <button type="button" class="item-delete" data-item-id="{{ item.id }}" aria-label="Delete {{ item.name }} from your items">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              {% else %}
+                <button type="button" class="item-hide" data-item-id="{{ item.id }}" aria-label="Hide {{ item.name }} from your list">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              {% endif %}
+              <span class="row">
+                <span class="name">{{ item.name }}</span>
+                <span class="check" aria-hidden="true">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+              </span>
+              <span class="unit-label">{{ item.default_unit }}</span>
+              <span class="qty-control">
+                <button type="button" class="qty-btn qty-minus" aria-label="Decrease {{ item.name }} quantity">−</button>
+                <span class="qty-text">{{ qty }} {{ item.default_unit }}</span>
+                <button type="button" class="qty-btn qty-plus" aria-label="Increase {{ item.name }} quantity">+</button>
+              </span>
+            </div>
+          {% endfor %}
+          <button type="button" class="add-item-chip" data-add-category="{{ cat.id }}" data-add-category-name="{{ cat.name }}">
+            <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add custom item
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+
+  <div class="receipt-wrap" id="receipt-wrap">
+    <div class="receipt">
+      <div class="sheet-handle"></div>
+      <button type="button" class="sheet-close" id="sheet-close" aria-label="Close list">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+
+      <div class="receipt-head">
+        <h2>Today's List</h2>
+        <span class="receipt-count" id="receipt-count">{{ draft_entries|length }} item{{ '' if draft_entries|length == 1 else 's' }}</span>
+      </div>
+      <div class="receipt-sub" id="receipt-date"></div>
+
+      <ul class="receipt-list" id="receipt-list">
+        {% for entry in draft_entries %}
+          <li data-entry-item-id="{{ entry.item_id }}" data-entry-name="{{ entry.item.name }}" data-entry-unit="{{ entry.item.default_unit }}">
+            <span class="shopping-check"><svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span class="entry-name">{{ entry.item.name }}</span>
+            <span class="qty-stepper">
+              <button type="button" class="qty-minus" aria-label="Decrease {{ entry.item.name }} quantity">−</button>
+              <span class="qty-val">{{ entry.quantity }} {{ entry.item.default_unit }}</span>
+              <button type="button" class="qty-plus" aria-label="Increase {{ entry.item.name }} quantity">+</button>
+              <button type="button" class="remove-btn" aria-label="Remove {{ entry.item.name }}">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <div class="receipt-empty" id="receipt-empty" {% if draft_entries %}style="display:none;"{% endif %}>
+        <svg class="icon icon-lg" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <div class="empty-title">Your list is empty</div>
+        <div class="empty-sub">Tap any grocery item to<br>start building today's list.</div>
+      </div>
+
+      <div class="shopping-progress" id="shopping-progress" style="display:none;"></div>
+
+      <div class="shopping-toggle-row">
+        <button type="button" class="btn btn-shopping" id="btn-shopping" {% if not draft_entries %}disabled{% endif %}>
+          Start Shopping
+        </button>
+        <button type="button" class="exit-shopping" id="exit-shopping" style="display:none;">Back to editing</button>
+      </div>
+
+      <div class="send-block" id="send-block">
+        <span class="send-label">WhatsApp number</span>
+        <input type="text" id="whatsapp-number" placeholder="e.g. 919876543210" value="{{ current_user.whatsapp_number or '' }}">
+        <button type="button" class="btn btn-whatsapp" id="btn-whatsapp" {% if not draft_entries %}disabled{% endif %}>
+          Send on WhatsApp
+        </button>
+
+        <span class="send-label">Recipient's email</span>
+        <input type="email" id="email-address" placeholder="email@example.com">
+        <button type="button" class="btn btn-stamp" id="btn-email" {% if not draft_entries %}disabled{% endif %}>
+          Send by Email
+        </button>
+
+        <div id="status-msg" class="status-msg" role="status" aria-live="polite"></div>
+        <button type="button" class="btn-clear" id="btn-clear" {% if not draft_entries %}disabled{% endif %}>Clear list</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-bar" id="mobile-bar">
+    <span class="mb-left">
+      <svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+      Today's List
+    </span>
+    <span class="mb-count" id="mobile-bar-count">{{ draft_entries|length }}</span>
+  </div>
+</div>
+
+<div class="undo-toast" id="undo-toast">
+  <span>List cleared</span>
+  <button type="button" id="undo-btn">Undo</button>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title">Add a grocery</h3>
+    <div class="field">
+      <label for="new-item-name">Item name</label>
+      <input type="text" id="new-item-name" minlength="2" placeholder="e.g. Coconut oil">
+    </div>
+    <div class="modal-grid">
+      <div class="field">
+        <label for="new-item-qty">Quantity</label>
+        <input type="number" id="new-item-qty" value="1" min="1" step="1">
+      </div>
+      <div class="field">
+        <label for="new-item-unit">Unit</label>
+        <input type="text" id="new-item-unit" list="unit-options" value="pcs">
+        <datalist id="unit-options">
+          <option value="pcs"><option value="kg"><option value="g">
+          <option value="L"><option value="ml"><option value="pack">
+          <option value="dozen"><option value="bottle"><option value="bunch">
+        </datalist>
+      </div>
+    </div>
+    <p class="hint" id="modal-error" style="color:var(--brick); display:none;"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-outline" id="modal-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="modal-save">Add item</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

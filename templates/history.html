@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}History — Pantry List{% endblock %}
+
+{% block content %}
+<div class="history-wrap">
+  <div class="dash-header">
+    <h1>Past lists</h1>
+    <p>Everything you've sent, most recent first.</p>
+  </div>
+
+  {% if lists %}
+    {% for gl in lists %}
+      <div class="history-item">
+        <div class="history-item-head">
+          <div class="meta">
+            {{ gl.created_at.strftime('%d %b %Y, %I:%M %p') }}
+            &middot; sent via {{ gl.sent_via }}
+            {% if gl.recipient %}&middot; to {{ gl.recipient }}{% endif %}
+          </div>
+          <form method="POST" action="{{ url_for('reuse_list', list_id=gl.id) }}">
+            <button type="submit" class="btn-reuse" title="Load these items into Today's List">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              Use again
+            </button>
+          </form>
+        </div>
+        <ul>
+          {% for entry in gl.entries %}
+            <li>{{ entry.item.name }} — {{ entry.quantity }} {{ entry.item.default_unit }}{% if entry.note %} ({{ entry.note }}){% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="history-empty">No lists sent yet. Build one from Today's List.</p>
+  {% endif %}
+
+  {% if hidden_items %}
+    <div class="hidden-items-block">
+      <h2>Hidden items</h2>
+      <p class="sub">Removed from Today's List for you. Restoring brings one back.</p>
+      <div class="hidden-items-list">
+        {% for item in hidden_items %}
+          <span class="hidden-item-pill">
+            {{ item.name }} <span class="unit">{{ item.default_unit }}</span>
+            <form method="POST" action="{{ url_for('unhide_item', item_id=item.id) }}">
+              <button type="submit" class="btn-restore">Restore</button>
+            </form>
+          </span>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

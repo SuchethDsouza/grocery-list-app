@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Pantry List{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to pick up today's list.</p>
+
+    <form method="POST" novalidate>
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{ email }}" required>
+      </div>
+      <div class="field">
+        <div style="display:flex; align-items:baseline; justify-content:space-between;">
+          <label for="password" style="margin-bottom:0;">Password</label>
+          <a href="{{ url_for('forgot_password') }}" class="forgot-link">Forgot password?</a>
+        </div>
+        <input type="password" id="password" name="password" required>
+      </div>
+      <div class="field" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="remember" name="remember" style="width:auto;">
+        <label for="remember" style="margin:0; text-transform:none; font-weight:400; font-size:0.85rem;">Keep me signed in</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+
+    <p class="auth-switch">New here? <a href="{{ url_for('signup') }}">Set up your pantry</a></p>
+  </div>
+</div>
+{% endblock %}
