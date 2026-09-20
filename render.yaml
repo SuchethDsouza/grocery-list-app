@@ -10,9 +10,11 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
-      - key: MAIL_USERNAME
+      - key: BREVO_API_KEY
         sync: false
-      - key: MAIL_PASSWORD
+      - key: BREVO_SENDER_EMAIL
         sync: false
+      - key: BREVO_SENDER_NAME
+        value: "Pantry List"
       - key: PYTHON_VERSION
         value: "3.12.4"

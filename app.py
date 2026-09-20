@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
+import requests
 from dotenv import load_dotenv
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
 
@@ -59,12 +60,13 @@ app.config["SESSION_COOKIE_SECURE"] = IS_PRODUCTION
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-# Mail config — reads from environment variables, never hardcode credentials
-app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
-app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "")
-app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "")
+# Mail config — Brevo transactional email API over HTTPS (port 443).
+# NOT SMTP: Render's free tier blocks outbound traffic on ports 25/465/587
+# entirely, so smtplib can never connect there. Brevo's API is a normal
+# HTTPS POST, so it works the same whether this runs locally or on Render.
+app.config["BREVO_API_KEY"] = os.environ.get("BREVO_API_KEY", "")
+app.config["BREVO_SENDER_EMAIL"] = os.environ.get("BREVO_SENDER_EMAIL", "")
+app.config["BREVO_SENDER_NAME"] = os.environ.get("BREVO_SENDER_NAME", "Pantry List")
 
 db = SQLAlchemy(app)
 
@@ -159,27 +161,48 @@ def load_user(user_id):
 
 
 def _send_plain_email(to, subject, body):
-    """Send a plain-text email via the same SMTP config used for list sending.
-    Returns True on success, False if mail isn't configured or sending failed."""
-    if not app.config["MAIL_USERNAME"] or not app.config["MAIL_PASSWORD"]:
-        return False
+    """Send a plain-text email via Brevo's HTTPS API.
+    Returns (ok: bool, error_message: str | None) — NEVER raises, so a
+    calling route can always return valid JSON instead of crashing into
+    an HTML error page (which is what happened with smtplib timeouts)."""
+    api_key = app.config["BREVO_API_KEY"]
+    sender_email = app.config["BREVO_SENDER_EMAIL"]
 
-    import smtplib
-    from email.mime.text import MIMEText
+    if not api_key or not sender_email:
+        return False, (
+            "Email sending isn't configured yet. Set BREVO_API_KEY and "
+            "BREVO_SENDER_EMAIL environment variables (see README) to enable this."
+        )
 
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = app.config["MAIL_USERNAME"]
-    msg["To"] = to
+    payload = {
+        "sender": {"name": app.config["BREVO_SENDER_NAME"], "email": sender_email},
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": body,
+    }
 
     try:
-        with smtplib.SMTP(app.config["MAIL_SERVER"], app.config["MAIL_PORT"]) as server:
-            server.starttls()
-            server.login(app.config["MAIL_USERNAME"], app.config["MAIL_PASSWORD"])
-            server.sendmail(app.config["MAIL_USERNAME"], [to], msg.as_string())
-        return True
-    except Exception:
-        return False
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json=payload,
+            timeout=10,  # fail fast rather than let the request hang
+        )
+    except requests.exceptions.RequestException as exc:
+        return False, f"Could not reach the email service: {exc}"
+
+    if resp.status_code in (200, 201):
+        return True, None
+
+    try:
+        err = resp.json().get("message", resp.text)
+    except ValueError:
+        err = resp.text
+    return False, f"Email service error ({resp.status_code}): {err}"
 
 
 # ---------------------------------------------------------------------------
@@ -263,8 +286,8 @@ def forgot_password():
         generic_msg = "If that email has an account, a reset link is on its way."
 
         if user:
-            if not app.config["MAIL_USERNAME"] or not app.config["MAIL_PASSWORD"]:
-                flash("Email sending isn't configured yet. Set MAIL_USERNAME and MAIL_PASSWORD "
+            if not app.config["BREVO_API_KEY"] or not app.config["BREVO_SENDER_EMAIL"]:
+                flash("Email sending isn't configured yet. Set BREVO_API_KEY and BREVO_SENDER_EMAIL "
                       "environment variables (see README) to enable password resets.", "error")
                 return render_template("forgot_password.html")
 
@@ -273,6 +296,9 @@ def forgot_password():
             db.session.commit()
 
             reset_url = url_for("reset_password", token=user.reset_token, _external=True)
+            # Result intentionally not surfaced here — this route always shows the
+            # same generic message below, so a failed send doesn't leak whether
+            # the account exists. (Check Render logs if resets seem to silently fail.)
             _send_plain_email(
                 to=user.email,
                 subject="Reset your Pantry List password",
@@ -610,28 +636,13 @@ def send_email():
 
     text = _format_list_text(draft)
 
-    if not app.config["MAIL_USERNAME"] or not app.config["MAIL_PASSWORD"]:
-        return jsonify({
-            "ok": False,
-            "error": "Email sending isn't configured yet. Set MAIL_USERNAME and MAIL_PASSWORD "
-                     "environment variables (see README) to enable this."
-        }), 503
-
-    import smtplib
-    from email.mime.text import MIMEText
-
-    msg = MIMEText(text)
-    msg["Subject"] = f"Grocery list from {current_user.name}"
-    msg["From"] = app.config["MAIL_USERNAME"]
-    msg["To"] = recipient
-
-    try:
-        with smtplib.SMTP(app.config["MAIL_SERVER"], app.config["MAIL_PORT"]) as server:
-            server.starttls()
-            server.login(app.config["MAIL_USERNAME"], app.config["MAIL_PASSWORD"])
-            server.sendmail(app.config["MAIL_USERNAME"], [recipient], msg.as_string())
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not send email: {exc}"}), 502
+    ok, error = _send_plain_email(
+        to=recipient,
+        subject=f"Grocery list from {current_user.name}",
+        body=text,
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": error}), 502
 
     draft.status = "sent"
     draft.sent_via = "email"
