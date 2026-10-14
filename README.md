@@ -4,6 +4,10 @@ A one-tap grocery list builder for households. Select what's needed for tomorrow
 cooking, then send the list straight to whoever's doing the shopping — over
 WhatsApp or email. No more forgetting an item or scribbling on paper.
 
+**Live demo:** [grocery-list-app-ggxy.onrender.com](https://grocery-list-app-ggxy.onrender.com)
+
+> ⚠️ The live demo runs on Render's free tier — the first request after a period of inactivity can take 30–60 seconds to wake up.
+
 ## Features
 
 - **Accounts per household** — sign up, log in, everyone on the account shares one live list
